@@ -1,8 +1,9 @@
-﻿using Serilog;
+﻿using System.Security.Cryptography;
+using Serilog;
 
 // create logger configuration - specify minimum level, and always write to console
 var loggerConf = new LoggerConfiguration()
-    .MinimumLevel.Debug()
+    .MinimumLevel.Verbose()
     .WriteTo.Console();
 
 // if log file is specified, add file sink to logger config
@@ -30,7 +31,7 @@ if (args.Length == 4)
 
     if (Directory.Exists(sourceFolder) && Directory.Exists(replicaFolder))
     {
-        log.Information("Source and replica folders exist and are readable.");
+        log.Debug("Source and replica folders exist and are readable.");
     }
     else
     {
@@ -44,6 +45,112 @@ else
     return 1;
 }
 
-log.Information("Starting synchronization...");
+log.Information("Starting synchronization from {SourceFolder} to {ReplicaFolder}, with interval of {SyncInterval} seconds...",
+    sourceFolder, replicaFolder, syncInterval);
+
+var enumOptions = new EnumerationOptions
+{
+    MatchCasing = MatchCasing.PlatformDefault,
+    MatchType = MatchType.Simple,
+    RecurseSubdirectories = true,
+    IgnoreInaccessible = false,
+    ReturnSpecialDirectories = false
+};
+
+Dictionary<string, byte[]> sourceHashes =
+    new Dictionary<string, byte[]>();
+
+try
+{
+    var sourceFiles = Directory.EnumerateFiles(sourceFolder, "*", enumOptions);
+
+    foreach (string file in sourceFiles)
+    {
+        string fileName = file.Substring(sourceFolder.Length + 1);
+        log.Verbose("Found {FileName} in source folder",  fileName);
+        using (var md5 = MD5.Create())
+        {
+            using (var stream = File.OpenRead(file))
+            {
+                sourceHashes.Add(fileName, md5.ComputeHash(stream));
+            }
+        }
+        
+        //Directory.Move(currentFile, Path.Combine(archiveDirectory, fileName));
+    }
+}
+catch (Exception ex)
+{
+    log.Error(ex.Message);
+}
+
+log.Verbose("Source hashes: {SourceHashes}", sourceHashes);
+
+Dictionary<string, byte[]> replicaHashes =
+    new Dictionary<string, byte[]>();
+
+try
+{
+    var replicaFiles = Directory.EnumerateFiles(replicaFolder, "*", enumOptions);
+
+    foreach (string file in replicaFiles)
+    {
+        string fileName = file.Substring(replicaFolder.Length + 1);
+        log.Verbose("Found {FileName} in replica folder",  fileName);
+        using (var md5 = MD5.Create())
+        {
+            using (var stream = File.OpenRead(file))
+            {
+                replicaHashes.Add(fileName, md5.ComputeHash(stream));
+            }
+        }
+        
+        //Directory.Move(currentFile, Path.Combine(archiveDirectory, fileName));
+    }
+}
+catch (Exception ex)
+{
+    log.Error(ex.Message);
+}
+
+log.Verbose("Replica hashes: {ReplicaHashes}", replicaHashes);
+
+var keysInSourceOnly = sourceHashes.Keys.Except(replicaHashes.Keys);
+var keysInReplicaOnly = replicaHashes.Keys.Except(sourceHashes.Keys);
+var keysInBoth = sourceHashes.Keys.Intersect(replicaHashes.Keys);
+
+// copy files that are in source only
+foreach (var fileName in keysInSourceOnly)
+{
+    string sourcePath = Path.Combine(sourceFolder, fileName);
+    string replicaPath = Path.Combine(replicaFolder, fileName);
+    //File.Copy(sourcePath, replicaPath);
+    log.Verbose("Copied file from {SourcePath} to {ReplicaPath}", sourcePath, replicaPath);
+}
+
+// Delete files that are in replica only
+foreach (var fileName in keysInReplicaOnly)
+{
+    string replicaPath = Path.Combine(replicaFolder, fileName);
+    //File.Delete(replicaPath);
+    log.Verbose("Deleted file from {ReplicaPath}", replicaPath);
+}
+
+// Compare files that are in both
+foreach (var fileName in keysInBoth)
+{
+    string sourcePath = Path.Combine(sourceFolder, fileName);
+    string replicaPath = Path.Combine(replicaFolder, fileName);
+
+    if (Enumerable.SequenceEqual(sourceHashes[fileName], replicaHashes[fileName]))
+    {
+        log.Verbose("File {FileName} identical in source and replica", fileName);
+    }
+    else
+    {
+        log.Verbose("File {FileName} different in source and replica, overwriting", fileName);
+        //File.Copy(sourcePath, replicaPath, true);
+    }
+}
 
 return 0;
