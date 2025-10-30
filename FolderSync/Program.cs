@@ -57,8 +57,8 @@ var enumOptions = new EnumerationOptions
     ReturnSpecialDirectories = false
 };
 
-Dictionary<string, byte[]> sourceHashes =
-    new Dictionary<string, byte[]>();
+Dictionary<string, FileStruct> sourceHashes =
+    new Dictionary<string, FileStruct>();
 
 try
 {
@@ -68,15 +68,14 @@ try
     {
         string fileName = file.Substring(sourceFolder.Length + 1);
         log.Verbose("Found {FileName} in source folder",  fileName);
-        using (var md5 = MD5.Create())
+
+        FileStruct fs = new FileStruct
         {
-            using (var stream = File.OpenRead(file))
-            {
-                sourceHashes.Add(fileName, md5.ComputeHash(stream));
-            }
-        }
-        
-        //Directory.Move(currentFile, Path.Combine(archiveDirectory, fileName));
+            ModifiedTime = File.GetLastWriteTime(file),
+            FileSize = new FileInfo(file).Length
+        };
+
+        sourceHashes.Add(fileName, fs);
     }
 }
 catch (Exception ex)
@@ -84,10 +83,10 @@ catch (Exception ex)
     log.Error(ex.Message);
 }
 
-log.Verbose("Source hashes: {SourceHashes}", sourceHashes);
+log.Verbose("Source dictionary: {@SourceHashes}", sourceHashes);
 
-Dictionary<string, byte[]> replicaHashes =
-    new Dictionary<string, byte[]>();
+Dictionary<string, FileStruct> replicaHashes =
+    new Dictionary<string, FileStruct>();
 
 try
 {
@@ -97,15 +96,22 @@ try
     {
         string fileName = file.Substring(replicaFolder.Length + 1);
         log.Verbose("Found {FileName} in replica folder",  fileName);
-        using (var md5 = MD5.Create())
-        {
-            using (var stream = File.OpenRead(file))
-            {
-                replicaHashes.Add(fileName, md5.ComputeHash(stream));
-            }
-        }
         
-        //Directory.Move(currentFile, Path.Combine(archiveDirectory, fileName));
+        FileStruct fs = new FileStruct
+        {
+            ModifiedTime = File.GetLastWriteTime(file),
+            FileSize = new FileInfo(file).Length
+        };
+
+        replicaHashes.Add(fileName, fs);
+        
+        // using (var md5 = MD5.Create())
+        // {
+        //     using (var stream = File.OpenRead(file))
+        //     {
+        //         replicaHashes.Add(fileName, md5.ComputeHash(stream));
+        //     }
+        // }
     }
 }
 catch (Exception ex)
@@ -113,7 +119,7 @@ catch (Exception ex)
     log.Error(ex.Message);
 }
 
-log.Verbose("Replica hashes: {ReplicaHashes}", replicaHashes);
+log.Verbose("Replica dictionary: {@ReplicaHashes}", replicaHashes);
 
 var keysInSourceOnly = sourceHashes.Keys.Except(replicaHashes.Keys);
 var keysInReplicaOnly = replicaHashes.Keys.Except(sourceHashes.Keys);
@@ -124,6 +130,8 @@ foreach (var fileName in keysInSourceOnly)
 {
     string sourcePath = Path.Combine(sourceFolder, fileName);
     string replicaPath = Path.Combine(replicaFolder, fileName);
+    // create directory structure (if it already exists, does nothing)
+    //Directory.CreateDirectory(Path.GetDirectoryName(replicaPath));
     //File.Copy(sourcePath, replicaPath);
     log.Verbose("Copied file from {SourcePath} to {ReplicaPath}", sourcePath, replicaPath);
 }
@@ -142,15 +150,22 @@ foreach (var fileName in keysInBoth)
     string sourcePath = Path.Combine(sourceFolder, fileName);
     string replicaPath = Path.Combine(replicaFolder, fileName);
 
-    if (Enumerable.SequenceEqual(sourceHashes[fileName], replicaHashes[fileName]))
+    if (sourceHashes[fileName].FileSize == replicaHashes[fileName].FileSize && sourceHashes[fileName].ModifiedTime == replicaHashes[fileName].ModifiedTime)
     {
-        log.Verbose("File {FileName} identical in source and replica", fileName);
+        log.Verbose("File {FileName} has identical size and modtime in source and replica", fileName);
     }
     else
     {
-        log.Verbose("File {FileName} different in source and replica, overwriting", fileName);
+        log.Verbose("File {FileName} has different size and/or modtime in source and replica, overwriting", fileName);
         //File.Copy(sourcePath, replicaPath, true);
     }
 }
 
 return 0;
+
+struct FileStruct
+{
+    public long FileSize; // file size (in bytes)
+    public DateTime ModifiedTime;
+    public byte[] hash;
+}
