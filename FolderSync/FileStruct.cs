@@ -1,5 +1,8 @@
 namespace FolderSync;
 
+/// <summary>
+/// Struct storing metadata about a file.
+/// </summary>
 public readonly struct FileStruct
 {
     public long FileSizeBytes { get; }

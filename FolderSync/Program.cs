@@ -8,7 +8,7 @@ namespace FolderSync
         {
             // create logger configuration - specify minimum level, and always write to console
             var loggerConf = new LoggerConfiguration()
-                .MinimumLevel.Verbose()
+                .MinimumLevel.Information()
                 .WriteTo.Console();
 
             // if log file is specified, add file sink to logger config
@@ -28,10 +28,12 @@ namespace FolderSync
                 try
                 {
                     syncInterval = int.Parse(args[3]);
+                    if (syncInterval <= 0) throw new ArgumentOutOfRangeException();
                 }
                 catch (Exception)
                 {
                     Log.Fatal("Failed to parse synchronization interval!");
+                    Log.CloseAndFlush();
                     return 1;
                 }
 
@@ -42,12 +44,14 @@ namespace FolderSync
                 else
                 {
                     Log.Fatal("Source and/or replica folders do not exist or are not readable!");
+                    Log.CloseAndFlush();
                     return 1;
                 }
             }
             else
             {
                 Log.Fatal("Expected 4 arguments! Syntax: <source folder> <replica folder> <log file> <sync interval (s)>");
+                Log.CloseAndFlush();
                 return 1;
             }
 
@@ -59,7 +63,7 @@ namespace FolderSync
             
             while (Console.ReadKey().Key != ConsoleKey.Enter) {}
             
-            synchronizer.StopSync();
+            Log.Information("Stopping synchronization...");
             
             Log.CloseAndFlush();
             
